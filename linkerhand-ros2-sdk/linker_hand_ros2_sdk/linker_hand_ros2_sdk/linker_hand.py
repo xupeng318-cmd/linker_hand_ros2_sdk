@@ -17,7 +17,7 @@ from datetime import datetime
 from linker_hand_ros2_sdk.LinkerHand.linker_hand_api import LinkerHandApi
 from linker_hand_ros2_sdk.LinkerHand.utils.color_msg import ColorMsg
 from linker_hand_ros2_sdk.LinkerHand.utils.open_can import OpenCan
-
+from linker_hand_ros2_sdk.LinkerHand.utils.preset_actions import PresetActions
 
 class LinkerHand(Node):
     def __init__(self, name):
@@ -72,9 +72,17 @@ class LinkerHand(Node):
         self.lock = threading.Lock()
         self.init_hand(hand_type=self.hand_type)
 
+        # 初始化预设动作控制器
+        self.preset_actions = PresetActions(self.api)
         
+        # 创建预设动作执行订阅者
+        self.action_sub = self.create_subscription(
+            String,
+            'hand_preset_action',
+            self.action_callback,
+            10
+        )
         
-
     def init_hand(self,hand_type):
         if hand_type == "left":
             self.api = LinkerHandApi(hand_type=hand_type, hand_joint=self.hand_joint,can=self.can)
@@ -551,7 +559,30 @@ class LinkerHand(Node):
         self.open_can.close_can(can=self.can)
         sys.exit(0)
 
-        
+    def action_callback(self, msg):
+        """处理预设动作请求"""
+        try:
+            action_name = msg.data
+            self.get_logger().info(f'收到预设动作请求: {action_name}')
+            
+            # 确认 API 实例是否正确初始化
+            if not hasattr(self, 'api') or self.api is None:
+                self.get_logger().error('API未初始化')
+                return
+                
+            # 执行动作
+            if hasattr(self, 'preset_actions'):
+                success = self.preset_actions.execute(action_name)
+                if success:
+                    self.get_logger().info(f'执行预设动作 {action_name} 成功')
+                else:
+                    self.get_logger().error(f'执行预设动作 {action_name} 失败')
+            else:
+                self.get_logger().error('预设动作控制器未初始化')
+        except Exception as e:
+            self.get_logger().error(f'执行预设动作时发生错误: {str(e)}')
+
+
 def main(args=None):
     rclpy.init(args=args)
     node = LinkerHand("linker_hand_sdk")
